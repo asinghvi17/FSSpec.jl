@@ -1,0 +1,13 @@
+name = "FSSpec"
+uuid = "e470e30c-dc67-49da-8628-71ff9501dcfb"
+authors = ["Anshul Singhvi <anshulsinghvi@gmail.com> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1.6.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
