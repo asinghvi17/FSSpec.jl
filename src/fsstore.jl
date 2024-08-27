@@ -25,10 +25,7 @@ function Base.getindex(s::FSStore, k::String)
 end
 
 function Zarr.storagesize(s::FSStore, p::String)
-    return 0 # placeholder for now
-    # The correct implementation is to walkdir through the filesystem and sum the sizes of all files
-    # You can get the filesizes using s.mapper.fs.du(path, total=True)
-    # return pyconvert(Int, s.mapper.fs.getsize(p))
+    return pyconvert(Int, s.mapper.fs.du(p; total = true))
 end
 
 function Zarr.read_items!(s::FSStore, c::AbstractChannel, p, i)
