@@ -67,8 +67,8 @@ end
 
 
 
-is_zarray(s::FSStore, p) = "$p/.zarray" in listdir(s, p, nometa=false)
-is_zgroup(s::FSStore, p) = ".zgroup" in listdir(s, p, nometa=false)
+Zarr.is_zarray(s::FSStore, p) = normpath("$p/.zarray") in listdir(s, p, nometa=false) # TODO: this is where relative file utils could be SUPER helpful.
+Zarr.is_zgroup(s::FSStore, p) = normpath("$p/.zgroup") in listdir(s, p, nometa=false)
 
 
 struct PyConcurrentRead end
