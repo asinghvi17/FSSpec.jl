@@ -1,6 +1,6 @@
 # FSSpec.jl
 
-A Julia wrapper around Python's [fsspec](https://github.com/filesystem_spec/fsspec) library.
+A Julia wrapper around Python's [fsspec](https://github.com/fsspec/filesystem_spec) library.
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://asinghvi17.github.io/FSSpec.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://asinghvi17.github.io/FSSpec.jl/dev/)
