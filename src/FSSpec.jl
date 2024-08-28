@@ -11,4 +11,7 @@ function __init__()
     fsspec[] = pyimport("fsspec")
 end
 
+include("python_utils.jl")
+include("fsstore.jl")
+
 end
