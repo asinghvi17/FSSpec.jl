@@ -1,12 +1,29 @@
+#=
+# FSStore (a Zarr store)
+
+Some notes on how FSSpec works:
+
+
+
+=#
+
 import Zarr
 
 
 using PythonCall
 
 """
-    FSStore
-Load data that can be accessed through 
-any filesystem supported by the fsspec python package.
+    FSStore(url; storage_options...)
+
+Load data that can be accessed through any filesystem supported by the [`fsspec`](https://github.com/fsspec/filesystem_spec) Python package.
+
+`url` can be any path in the form `protocol://path/to/file`.
+
+## Kerchunk
+
+To open a Kerchunk catalog, call `FSStore("reference://"; fo = "path/to/catalog.json")`.  
+`fo` may be any path that `fsspec` can read, or a Dict following the Kerchunk JSON structure.  
+If it is a Dict, it may not contain any values that cannot be translated directly to Python types.
 """
 struct FSStore <: Zarr.AbstractStore
     url::String
@@ -41,14 +58,14 @@ function Zarr.isinitialized(s::FSStore, p)
 end
 
 function Zarr.isinitialized(s::FSStore, p, i)
-    return pyconvert(Bool, s.mapper.fs.exists(p))
+    return pyconvert(Bool, s.mapper.fs.exists("$p/$i"))
 end
 
-function listdir(s::FSStore, p; nometa=true) 
+function listdir(s::FSStore, p; nometa=false) 
     try
         listing = pyconvert(Vector{String}, s.mapper.dirfs.ls(p, detail=false))
         if nometa
-          listing = [za for za in listing if !startswith(za, ".")]
+          filter!(!startswith("."), listing)
         end
         return listing
     catch e
@@ -57,18 +74,18 @@ function listdir(s::FSStore, p; nometa=true)
 end
 
 
-Zarr.subdirs(s::FSStore, p) = filter(listdir(s, p)) do path
-    pyconvert(Bool, s.mapper.fs.isdir(path))
+Zarr.subdirs(s::FSStore, p) = filter(listdir(s, p; nometa = true)) do path
+    pyconvert(Bool, s.mapper.dirfs.isdir(path))
 end
 
-Zarr.subkeys(s::FSStore, p) = filter(listdir(s, p)) do path
-    pyconvert(Bool, s.mapper.fs.isfile(path))
+Zarr.subkeys(s::FSStore, p) = filter(listdir(s, p; nometa = true)) do path
+    pyconvert(Bool, s.mapper.dirfs.isfile(path))
 end
 
 
 
-Zarr.is_zarray(s::FSStore, p) = normpath("$p/.zarray") in listdir(s, p, nometa=false) # TODO: this is where relative file utils could be SUPER helpful.
-Zarr.is_zgroup(s::FSStore, p) = normpath("$p/.zgroup") in listdir(s, p, nometa=false)
+Zarr.is_zarray(s::FSStore, p) = ((normpath(p) in ("/", ".")) ? ".zarray" : normpath("$p/.zarray")) in listdir(s, p, nometa=false) # TODO: this is where relative file utils could be SUPER helpful.
+Zarr.is_zgroup(s::FSStore, p) = ((normpath(p) in ("/", ".")) ? ".zgroup" : normpath("$p/.zgroup")) in listdir(s, p, nometa=false)
 
 
 struct PyConcurrentRead end
