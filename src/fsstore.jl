@@ -14,14 +14,13 @@ struct FSStore <: Zarr.AbstractStore
 end
 
 function FSStore(url::String; storage_options...)
-    fsspec = pyimport("fsspec")
-    fs, = fsspec.core.url_to_fs(url; storage_options...)
+    fs, = fsspec[].core.url_to_fs(url; storage_options...)
     mapper = fs.get_mapper(url)
     return FSStore(url, mapper)
 end
 
 function Base.getindex(s::FSStore, k::String)
-   return pyconvert(Vector, s.mapper[k])
+   return pyconvert(Vector{UInt8}, s.mapper[k])
 end
 
 function Zarr.storagesize(s::FSStore, p::String)
@@ -33,7 +32,7 @@ function Zarr.read_items!(s::FSStore, c::AbstractChannel, p, i)
     ckeys = ["$p/$cind" for cind in cinds]
     cdatas = s.mapper.getitems(ckeys, on_error="omit")
     for ii in i
-        put!(c,(ii => pyconvert(Vector, cdatas[ckeys[ii]])))
+        put!(c,(ii => pyconvert(Vector{UInt8}, cdatas[ckeys[ii]])))
     end
 end
 
@@ -47,7 +46,7 @@ end
 
 function listdir(s::FSStore, p; nometa=true) 
     try
-        listing = pyconvert(Vector, s.mapper.fs.listdir(p, detail=false))
+        listing = pyconvert(Vector{String}, s.mapper.dirfs.ls(p, detail=false))
         if nometa
           listing = [za for za in listing if !startswith(za, ".")]
         end
