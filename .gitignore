@@ -2,3 +2,5 @@
 /docs/Manifest.toml
 /docs/build/
 **/.CondaPkg
+test/test.json
+test/test.nc
