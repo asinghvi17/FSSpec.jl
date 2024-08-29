@@ -15,7 +15,12 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 julia = "1.10"
 
 [extras]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Rasters = "a3a2b9e3-a471-40c9-b274-f788e487c689"
+YAXArrays = "c21b50f5-aa40-41ea-b809-c0f5e47bfa5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Dates", "JSON3", "NCDatasets", "Rasters", "YAXArrays", "Test"]
