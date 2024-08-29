@@ -39,8 +39,16 @@ function Base.stat(s::FSStore, p::String)
     return pyconvert(Py, s.dirfs.info(p))
 end
 
-function FSStore(url::String; storage_options...)
-    fs, = fsspec[].core.url_to_fs(url; storage_options...)
+function FSStore(url::String; fo = nothing, storage_options...)
+    fs, = if isnothing(fo)
+        fsspec[].core.url_to_fs(url; storage_options...)
+    elseif fo isa String
+        fsspec[].core.url_to_fs(url; fo, storage_options...)
+    elseif fo isa AbstractDict
+        fsspec[].core.url_to_fs(url; fo = _recursive_pyconvert(fo), storage_options...)
+    else
+        error("FSSpec.jl: Invalid type for `fo` storage option: $(typeof(fo))")
+    end
     # We have to handle reference:// separately, since passing 
     # that as a URL to `fs.get_mapper` breaks it.
     mapper, dirfs = if url == "reference://"
