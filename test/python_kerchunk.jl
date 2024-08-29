@@ -7,7 +7,7 @@ const fsspec = pyimport("fsspec")
 # You can't import kerchunk.hdf because importing h5py introduces a version of libhdf5 that is incompatible with any extant netcdf4_jll.
 
 
-using Rasters, NCDatasets, Dates
+using Rasters, NCDatasets, Dates, YAXArrays
 
 using Test
 
@@ -34,14 +34,14 @@ with open('test.json', 'w') as f:
     ```)
 end
 
-pykerchunkcatalog = JSON3.read(read("test.json", String)) |> FSSpec._recursive_pyconvert 
+py_kerchunk_catalog = JSON3.read(read("test.json", String)) |> FSSpec._recursive_pyconvert 
 
 st = FSSpec.FSStore("reference://"; fo = "test.json")
-st2 = FSSpec.FSStore("reference://"; fo = pykerchunkcatalog)
+st2 = FSSpec.FSStore("reference://"; fo = py_kerchunk_catalog)
 #=
 # explore why fsspec might be causing problems
 fs, = fsspec.core.url_to_fs("s3://its-live-data/datacubes/v2/N00E020/ITS_LIVE_vel_EPSG32735_G0120_X750000_Y10050000.zarr")
-fs2, = fsspec.core.url_to_fs("reference://"; fo = pykerchunkcatalog)
+fs2, = fsspec.core.url_to_fs("reference://"; fo = py_kerchunk_catalog)
 st.mapper.dirfs.ls("/")
 =#
 
