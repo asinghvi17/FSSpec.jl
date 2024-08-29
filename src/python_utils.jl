@@ -20,14 +20,14 @@ So, we have to pass a pure Python dictionary to Python, and to do that we need t
 before sending it to Python.
 =#
 
-function _recursive_pyconvert!(target::Dict, source::Dict)
+function _recursive_pyconvert!(target::Dict, source::AbstractDict)
     for (k, v) in source
         if k isa Symbol
             key = string(k)
         else
             key = k
         end
-        if isa(v, Dict) # TODO: refactor to use multiple dispatch.
+        if v isa AbstractDict # TODO: refactor to use multiple dispatch.
             td = Dict{String, Any}()
             _recursive_pyconvert!(td, v)
             target[key] = pydict(td)
@@ -46,7 +46,7 @@ Convert a Julia dict to a Python dict, recursively.  Returns a `PythonCall.Py` o
 
 This is a pure Python dict and not a Julia dict wrapped in Python, so it plays better with Python functions.
 """
-function _recursive_pyconvert(source::Dict)
+function _recursive_pyconvert(source::AbstractDict)
     target = Dict{String, Any}()
     _recursive_pyconvert!(target, source)
     return pydict(target)
