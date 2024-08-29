@@ -9,7 +9,7 @@ Some notes on how FSSpec works:
 
 import Zarr
 
-
+import URIs
 using PythonCall
 
 """
@@ -26,14 +26,22 @@ To open a Kerchunk catalog, call `FSStore("reference://"; fo = "path/to/catalog.
 If it is a Dict, it may not contain any values that cannot be translated directly to Python types.
 """
 struct FSStore <: Zarr.AbstractStore
-    url::String
+    url::URIs.URI
     mapper::Py
+end
+
+function Base.readdir(s::FSStore, p::String)
+    return pyconvert(Vector{String}, s.mapper.dirfs.ls(p, detail=false))
+end
+
+function Base.stat(s::FSStore, p::String)
+    return pyconvert(Py, s.mapper.dirfs.info(p))
 end
 
 function FSStore(url::String; storage_options...)
     fs, = fsspec[].core.url_to_fs(url; storage_options...)
     mapper = fs.get_mapper(url)
-    return FSStore(url, mapper)
+    return FSStore(URIs.URI(url), mapper)
 end
 
 function Base.getindex(s::FSStore, k::String)
