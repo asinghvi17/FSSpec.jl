@@ -25,7 +25,7 @@ write("test.nc", ras; source = :netcdf, force = true)
 # Julia and Python are fundamentally incompatible, so we can't use the same process for both.
 CondaPkg.withenv() do
     run(```
-python -c "
+$(CondaPkg.which("python")) -c "
 import kerchunk.hdf as hdf; import os; import ujson
 h5chunks = hdf.SingleHdf5ToZarr('test.nc', inline_threshold=300)
 with open('test.json', 'w') as f:
