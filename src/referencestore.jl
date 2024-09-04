@@ -224,7 +224,7 @@ end
 
 This function resolves a string which may or may not have templating to a URI.
 """
-function resolve_uri(store::ReferenceStore{<: Any, <: Any, HasTemplates}, source::String) where {HasTemplates}
+function resolve_uri(store::ReferenceStore{<: Any, HasTemplates}, source::String) where {HasTemplates}
     resolved = if HasTemplates
         apply_templates(store, source)
     else
