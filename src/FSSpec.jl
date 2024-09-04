@@ -18,4 +18,6 @@ include("readbytes.jl")
 include("referencestore.jl")
 include("materialize.jl")
 
+export FSStore, ReferenceStore
+
 end

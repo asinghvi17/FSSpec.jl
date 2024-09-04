@@ -29,7 +29,7 @@ Files can be:
 - reference to a full file (file path in a single element vector)
 - reference to a subrange of a file (`file path`, `start index`, `number of bytes to read` in a three element vector)
 
-Files can aleo be generated, so we have to parse that and then actually materialize the store, at least for now.
+Files can also be generated, so we have to parse that and then actually materialize the store, at least for now.
 
 ## The JSON schema
 ```json
@@ -180,6 +180,19 @@ end
 Zarr.store_read_strategy(::ReferenceStore) = Zarr.SequentialRead()
 Zarr.read_items!(s::ReferenceStore, c::AbstractChannel, ::Zarr.SequentialRead, p, i) = Zarr.read_items!(s, c, p, i)
 
+
+# End of Zarr interface implementation
+
+# Begin file access implementation
+
+"""
+    _get_file_bytes(store::ReferenceStore, reference)
+
+By hook or by crook, this function will return the bytes for the given reference.
+The reference could be a base64 encoded binary string, a path to a file, or a subrange of a file.
+"""
+function _get_file_bytes end
+
 function _get_file_bytes(store::ReferenceStore, bytes::String)
     # single file
     if startswith(bytes, "base64:") # base64 encoded binary
@@ -190,22 +203,37 @@ function _get_file_bytes(store::ReferenceStore, bytes::String)
     end
 end
 
-function _get_file_bytes(store::ReferenceStore, file::JSON3.Array{Any, Vector{UInt8}, SubArray{UInt64, 1, Vector{UInt64}, Tuple{UnitRange{Int64}}, true}})
-    # subpath to file
-    filename, offset, length = file
-    uri = resolve_uri(store, filename)
-    return readbytes(uri, offset #= mimic Python behaviour =#, offset + length)
+function _get_file_bytes(store::ReferenceStore, spec::JSON3.Array)
+    if length(spec) == 1
+        # path to file, read the whole thing
+        file = only(spec)
+        return read(resolve_uri(store, file))
+    elseif length(spec) == 3
+        # subpath to file
+        filename, offset, length = spec
+        uri = resolve_uri(store, filename)
+        return readbytes(uri, offset #= mimic Python behaviour =#, offset + length)
+    else
+        error("Invalid path spec $spec \n expected 1 or 3 elements, got $(length(spec))")
+    end
 end
 
-# function _get_file_bytes(store::ReferenceStore, file::JSON3.Array)
-#     @assert length(file) == 1 "Path to file must be a single element array, found $file"
-#     return read(resolve_uri(store, file[1]))
-# end
 
-function resolve_uri(store::ReferenceStore, source::String)
-    resolved = apply_templates(store, source)
+"""
+    resolve_uri(store::ReferenceStore, source::String)
+
+This function resolves a string which may or may not have templating to a URI.
+"""
+function resolve_uri(store::ReferenceStore{<: Any, <: Any, HasTemplates}, source::String) where {HasTemplates}
+    resolved = if HasTemplates
+        apply_templates(store, source)
+    else
+        source
+    end
+    # Parse the resolved string as a URI
     uri = URIs.URI(resolved)
-    # check if relpath / abspath
+
+    # If the URI's scheme is empty, we're resolving a local file path
     if isempty(uri.scheme)
         if isabspath(source)
             return FilePathsBase.PosixPath(source)
@@ -215,12 +243,22 @@ function resolve_uri(store::ReferenceStore, source::String)
             error("Invalid path, presumed local but not resolvable as absolute or relative path: $source")
         end
     end
+    # Otherwise, we check the protocol and create the appropriate path type.
     if uri.scheme == "file"
         return FilePathsBase.SystemPath(uri.path)
     elseif uri.scheme == "s3"
         return Zarr.AWSS3.S3Path(uri.uri)
-    end # TODO: add more 
+    end # TODO: add more protocols, like HTTP, Google Cloud, Azure, etc.
 end
+
+
+"""
+    apply_templates(store::ReferenceStore, source::String)
+
+This function applies the templates stored in `store` to the source string, and returns the resolved string.
+
+It uses Mustache.jl under the hood, but all `{{template}}` values are set to **not** URI-encode characters.
+"""
 function apply_templates(store::ReferenceStore, source::String)
     tokens = Mustache.parse(source)
     # Adjust tokens so that `{{var}}` becomes `{{{var}}}`, the latter of which
