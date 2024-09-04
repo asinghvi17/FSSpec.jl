@@ -57,10 +57,58 @@ Files can aleo be generated, so we have to parse that and then actually material
 ```
 =#
 using JSON3, Base64 # for decoding
+using FilePathsBase, URIs, Mustache # to resolve paths and access files
+using Zarr
+using Zarr.AWSS3
 
-struct ReferenceStore{MapperType <: AbstractDict, MetadataType <: AbstractDict} <: Zarr.AbstractStore
-    zmetadata::MetadataType
+struct ReferenceStore{MapperType <: AbstractDict, HasTemplates} <: Zarr.AbstractStore
     mapper::MapperType
+    zmetadata::Dict{String, Any}
+    templates::Dict{String, String}
+end
+
+function ReferenceStore(filename::Union{String, FilePathsBase.AbstractPath})
+    parsed = JSON3.read(read(filename))
+    return ReferenceStore(parsed)
+end
+
+function ReferenceStore(parsed::AbstractDict{<: Union{String, Symbol}, <: Any})
+    @assert haskey(parsed, "version") "ReferenceStore requires a version field, did not find one.  if you have a Kerchunk v0 then you have a problem!"
+    @assert parsed["version"] == 1 "ReferenceStore only supports Kerchunk version 1, found $version"
+    @assert !haskey(parsed, "gen") "ReferenceStore does not support generated paths, please file an issue on Github if you need these!"
+
+    has_templates = haskey(parsed, "templates")
+    templates = if has_templates
+        td = Dict{String, String}()
+        for (k, v) in parsed["templates"]
+            td[string(k)] = string(v)
+        end
+        td
+    else
+        Dict{String, String}()
+    end
+
+    zmetadata = if haskey(parsed, ".zmetadata")
+        td = Dict{String, Any}()
+        for (k, v) in parsed[".zmetadata"]
+            td[string(k)] = v
+        end
+        td
+    else
+        Dict{String, Any}()
+    end
+
+    refs = parsed["refs"]
+
+    return ReferenceStore{typeof(refs), has_templates}(refs, zmetadata, templates)
+end
+
+function Base.show(io::IO, ::MIME"text/plain", store::ReferenceStore)
+    println(io, "ReferenceStore with $(length(store.mapper)) references")
+end
+
+function Base.show(io::IO, store::ReferenceStore)
+    println(io, "ReferenceStore with $(length(store.mapper)) references")
 end
 
 function Base.getindex(store::ReferenceStore, key::String)
@@ -72,9 +120,6 @@ function Base.setindex!(store::ReferenceStore, value, key::String)
     #store.mapper[key] = value
 end
 
-function Base.exists(store::ReferenceStore, key::String)
-    return haskey(store.mapper, key)
-end
 
 function Base.keys(store::ReferenceStore)
     return keys(store.mapper)
@@ -89,15 +134,51 @@ end
 function Zarr.subdirs(store::ReferenceStore, key)
     path = rstrip(key, '/')
     l_path = length(path)
-    return filter(keys(store)) do k
-        startswith(k, key * "/") && # path is a child of the key
-        '/' ∉ key[l_path+1:end] # path has no children
+    sub_sub_keys = filter(keys(store)) do k
+        startswith(string(k), isempty(key) ? "" : key * "/") && # path is a child of the key
+        '/' in string(k)[l_path+1:end] # path has children
     end
+    sub_dirs = unique!([rsplit(string(sub_sub_key), "/", limit=2)[1] for sub_sub_key in sub_sub_keys])
+    return sub_dirs
 end
 
 function Zarr.subkeys(store::ReferenceStore, key::String)
-    return keys(store.mapper)
+    path = rstrip(key, '/')
+    l_path = length(path)
+    return filter(keys(store)) do k
+        startswith(string(k), isempty(key) ? "" : key * "/") && # path is a child of the key
+        '/' ∉ string(k)[l_path+2:end] # path has no children
+    end .|> string
 end
+
+Zarr.storagesize(store::ReferenceStore, key::String) = 0 # TODO implement
+
+function Zarr.read_items!(store::ReferenceStore, c::AbstractChannel, p, i)
+    cinds = [Zarr.citostring(ii) for ii in i]
+    ckeys = ["$p/$cind" for cind in cinds]
+    for (idx, ii) in enumerate(i)
+        put!(c, (ii => _get_file_bytes(store, store[ckeys[idx]])))
+    end
+end
+
+function Zarr.isinitialized(store::ReferenceStore, p::String)
+    return haskey(store.mapper, p)
+end
+function Zarr.isinitialized(store::ReferenceStore, p::String, i::Int)
+    return haskey(store.mapper, "$p/$i")
+end
+
+Zarr.is_zarray(store::ReferenceStore, p::String) = ((normpath(p) in ("/", ".")) ? ".zarray" : normpath("$p/.zarray")) in keys(store)
+Zarr.is_zgroup(store::ReferenceStore, p::String) = ((normpath(p) in ("/", ".")) ? ".zgroup" : normpath("$p/.zgroup")) in keys(store)
+
+Zarr.getattrs(store::ReferenceStore, p::String) = if haskey(store.mapper, normpath(p) in ("/", ".") ? ".zattrs" : "$p/.zattrs")
+    Zarr.JSON.parse(String(_get_file_bytes(store, store[normpath(p) in ("/", ".") ? ".zattrs" : "$p/.zattrs"])))
+else
+    Dict{String, Any}()
+end
+
+Zarr.store_read_strategy(::ReferenceStore) = Zarr.SequentialRead()
+Zarr.read_items!(s::ReferenceStore, c::AbstractChannel, ::Zarr.SequentialRead, p, i) = Zarr.read_items!(s, c, p, i)
 
 function _get_file_bytes(store::ReferenceStore, bytes::String)
     # single file
@@ -109,25 +190,27 @@ function _get_file_bytes(store::ReferenceStore, bytes::String)
     end
 end
 
-function _get_file_bytes(store::ReferenceStore, file::JSON3.Array{<: Any, Base.CodeUnits{UInt8, String}, SubArray{UInt64, 1, Vector{UInt64}, Tuple{UnitRange{Int64}}, true}})
+function _get_file_bytes(store::ReferenceStore, file::JSON3.Array{Any, Vector{UInt8}, SubArray{UInt64, 1, Vector{UInt64}, Tuple{UnitRange{Int64}}, true}})
     # subpath to file
     filename, offset, length = file
     uri = resolve_uri(store, filename)
-    return readbytes(uri, offset, offset + length)
+    return readbytes(uri, offset #= mimic Python behaviour =#, offset + length)
 end
 
-function _get_file_bytes(store::ReferenceStore, file::JSON3.Array{<: Any, Base.CodeUnits{UInt8, String}, true})
-    return read(resolve_uri(store, file))
-end
+# function _get_file_bytes(store::ReferenceStore, file::JSON3.Array)
+#     @assert length(file) == 1 "Path to file must be a single element array, found $file"
+#     return read(resolve_uri(store, file[1]))
+# end
 
 function resolve_uri(store::ReferenceStore, source::String)
-    uri = URIs.URI(uri)
+    resolved = apply_templates(store, source)
+    uri = URIs.URI(resolved)
     # check if relpath / abspath
     if isempty(uri.scheme)
         if isabspath(source)
-            return FilePathsBase.SystemPath(source)
-        elseif isrelpath(source)
-            return FilePathsBase.SystemPath(joinpath(pwd(), source))
+            return FilePathsBase.PosixPath(source)
+        elseif ispath(source)
+            return FilePathsBase.PosixPath(joinpath(pwd(), source))
         else
             error("Invalid path, presumed local but not resolvable as absolute or relative path: $source")
         end
@@ -135,6 +218,17 @@ function resolve_uri(store::ReferenceStore, source::String)
     if uri.scheme == "file"
         return FilePathsBase.SystemPath(uri.path)
     elseif uri.scheme == "s3"
-        return Zarr.AWSS3.S3Path(source)
+        return Zarr.AWSS3.S3Path(uri.uri)
     end # TODO: add more 
+end
+function apply_templates(store::ReferenceStore, source::String)
+    tokens = Mustache.parse(source)
+    # Adjust tokens so that `{{var}}` becomes `{{{var}}}`, the latter of which
+    # is rendered without URI escaping.
+    for token in tokens.tokens
+        if token._type == "name"
+            token._type = "{"
+        end
+    end
+    return Mustache.render(tokens, store.templates)
 end

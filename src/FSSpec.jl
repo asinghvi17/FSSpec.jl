@@ -14,4 +14,8 @@ end
 include("python_utils.jl")
 include("fsstore.jl")
 
+include("readbytes.jl")
+include("referencestore.jl")
+include("materialize.jl")
+
 end
