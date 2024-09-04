@@ -37,6 +37,9 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
+      - name: "Install custom package versions"
+        run: |
+          julia -e 'using Pkg; pkg"add Zarr#as/filters"; pkg"precompile"'
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
   docs:
