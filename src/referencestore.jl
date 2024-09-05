@@ -151,7 +151,23 @@ function Zarr.subkeys(store::ReferenceStore, key::String)
     end .|> string
 end
 
-Zarr.storagesize(store::ReferenceStore, key::String) = 0 # TODO implement
+function Zarr.storagesize(store::ReferenceStore, key::String) 
+    spec = store[key]
+    if spec isa String
+        return length(string)
+    elseif spec isa JSON3.Array
+        if length(spec) == 1
+            return filesize(resolve_uri(store, only(spec)))
+        elseif length(spec) == 3
+            return spec[3] - spec[2] # since we know the byte range, we can return the length directly
+        else
+            error("Invalid path spec $spec \n expected 1 or 3 elements, got $(length(spec))")
+        end
+    else
+        error("Invalid path spec $spec \n expected a string or array, got $(typeof(spec))")
+    end
+end
+
 
 function Zarr.read_items!(store::ReferenceStore, c::AbstractChannel, p, i)
     cinds = [Zarr.citostring(ii) for ii in i]
@@ -204,11 +220,11 @@ function _get_file_bytes(store::ReferenceStore, bytes::String)
 end
 
 function _get_file_bytes(store::ReferenceStore, spec::JSON3.Array)
-    if length(spec) == 1
+    if Base.length(spec) == 1
         # path to file, read the whole thing
         file = only(spec)
         return read(resolve_uri(store, file))
-    elseif length(spec) == 3
+    elseif Base.length(spec) == 3
         # subpath to file
         filename, offset, length = spec
         uri = resolve_uri(store, filename)
@@ -233,7 +249,9 @@ function resolve_uri(store::ReferenceStore{<: Any, HasTemplates}, source::String
     # Parse the resolved string as a URI
     uri = URIs.URI(resolved)
 
-    # If the URI's scheme is empty, we're resolving a local file path
+    # If the URI's scheme is empty, we're resolving a local file path.
+    # Note that we always use PosixPaths here, because the Zarr spec mandates that
+    # all path separators be forward slashes.  Kerchunk also mandates this.
     if isempty(uri.scheme)
         if isabspath(source)
             return FilePathsBase.PosixPath(source)
